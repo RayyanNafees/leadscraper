@@ -36,7 +36,7 @@ import {
   X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -135,12 +135,12 @@ const LEADS: Lead[] = [
 const CATEGORIES = ['All', 'Education', 'Money', 'Business', 'Automation'];
 const SUGGESTIONS = ['zapier', 'make.com', 'n8n', 'activepieces', 'paperclip', 'konnectify'];
 
-let genAI: GoogleGenerativeAI | null = null;
+let genAI: GoogleGenAI | null = null;
 function getGenAI() {
   if (!genAI) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY is not defined");
-    genAI = new GoogleGenerativeAI(apiKey);
+    genAI = new GoogleGenAI({ apiKey });
   }
   return genAI;
 }
@@ -149,10 +149,47 @@ export default function App() {
   const [isDark, setIsDark] = React.useState(false);
   const [activeCategory, setActiveCategory] = React.useState('All');
   const [platform, setPlatform] = React.useState<Platform>('YouTube');
+  const [inputValue, setInputValue] = React.useState('n8n');
   const [search, setSearch] = React.useState('n8n');
+  const [dynamicSuggestions, setDynamicSuggestions] = React.useState<string[]>(['zapier', 'make.com', 'n8n', 'activepieces', 'paperclip', 'konnectify']);
+  const [isFetchingSuggestions, setIsFetchingSuggestions] = React.useState(false);
+  
+  // Debounce input value to search state
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(inputValue);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [inputValue]);
   
   // Proposal Modal State
   const [isProposalOpen, setIsProposalOpen] = React.useState(false);
+
+  const fetchTrendingKeywords = async (query: string) => {
+    setIsFetchingSuggestions(true);
+    try {
+      const ai = getGenAI();
+      const prompt = query.trim() 
+        ? `Given the search term "${query}", suggest 6 related trending software tools, automation platforms, or technical keywords specifically in the B2B/SaaS space. Return ONLY a comma-separated list of names.`
+        : `Suggest 6 of the most currently trending software tools, AI platforms, or automation frameworks (e.g. Cursor, Replit, n8n, LangChain). Return ONLY a comma-separated list of names.`;
+
+      const result = await ai.models.generateContent({
+        model: "gemini-flash-latest",
+        contents: prompt
+      });
+      const text = result.text;
+      const keywords = (text || '').split(',').map(k => k.trim()).filter(k => k.length > 0).slice(0, 6);
+      if (keywords.length > 0) setDynamicSuggestions(keywords);
+    } catch (error) {
+      console.error("Failed to fetch suggestions:", error);
+    } finally {
+      setIsFetchingSuggestions(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchTrendingKeywords(search);
+  }, [search]);
   const [selectedLead, setSelectedLead] = React.useState<Lead | null>(null);
   const [proposalText, setProposalText] = React.useState('');
   const [isGenerating, setIsGenerating] = React.useState(false);
@@ -165,7 +202,7 @@ export default function App() {
     setSelectedLead(lead);
 
     try {
-      const model = getGenAI().getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+      const ai = getGenAI();
       const prompt = refinement 
         ? `Given this existing proposal: "${proposalText}", refine it with this instruction: "${refinement}". 
            Keep the context of the lead: Title: ${lead.title}, Channel: ${lead.channelName}, Subscribers: ${lead.subscribers}.`
@@ -179,8 +216,11 @@ export default function App() {
            The proposal should be concise, mention a specific detail from their title, and offer automation services to help scale their business. 
            Use a friendly but professional tone. Do not include subject lines, just the body.`;
 
-      const result = await model.generateContent(prompt);
-      setProposalText(result.response.text());
+      const result = await ai.models.generateContent({
+        model: "gemini-flash-latest",
+        contents: prompt
+      });
+      setProposalText(result.text || "No text generated.");
     } catch (error) {
       console.error("Failed to generate proposal:", error);
       setProposalText("Error generating proposal. Please check your API key.");
@@ -193,6 +233,35 @@ export default function App() {
     navigator.clipboard.writeText(proposalText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExport = () => {
+    if (filteredLeads.length === 0) return;
+    
+    const headers = ['ID', 'Channel Name', 'Subscribers', 'Title', 'Views', 'Likes', 'Category', 'Post Date'];
+    const csvRows = [
+      headers.join(','),
+      ...filteredLeads.map(lead => [
+        `"${lead.id}"`,
+        `"${(lead.channelName || '').replace(/"/g, '""')}"`,
+        `"${(lead.subscribers || lead.count).replace(/"/g, '""')}"`,
+        `"${lead.title.replace(/"/g, '""')}"`,
+        `"${lead.views}"`,
+        `"${lead.likes}"`,
+        `"${lead.category}"`,
+        `"${lead.dateGroup}"`
+      ].join(','))
+    ];
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `leads_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   React.useEffect(() => {
@@ -264,8 +333,8 @@ export default function App() {
                         </div>
                         <input 
                           type="text" 
-                          value={search}
-                          onChange={(e) => setSearch(e.target.value)}
+                          value={inputValue}
+                          onChange={(e) => setInputValue(e.target.value)}
                           placeholder="Search keywords (e.g. n8n experts)" 
                           className="flex-grow px-5 py-3 outline-none text-sm bg-transparent text-foreground"
                         />
@@ -274,16 +343,30 @@ export default function App() {
                         </button>
                       </div>
 
-                      <div className="flex flex-wrap justify-center gap-2">
-                        {SUGGESTIONS.map(s => (
-                          <button 
-                            key={s}
-                            onClick={() => setSearch(s)}
-                            className={`px-4 py-1.5 text-xs font-medium border border-border rounded-full transition-all ${search === s ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'hover:bg-muted text-muted-foreground'}`}
-                          >
-                            {s}
-                          </button>
-                        ))}
+                      <div className="flex flex-wrap justify-center gap-2 min-h-[32px]">
+                        <AnimatePresence mode="popLayout">
+                          {dynamicSuggestions.map((s, idx) => (
+                            <motion.button 
+                              key={s}
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.9 }}
+                              transition={{ delay: idx * 0.05 }}
+                              onClick={() => {
+                                setInputValue(s);
+                                setSearch(s);
+                              }}
+                              className={`px-4 py-1.5 text-xs font-medium border border-border rounded-full transition-all ${search === s ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'hover:bg-muted text-muted-foreground bg-background'}`}
+                            >
+                              {s}
+                            </motion.button>
+                          ))}
+                        </AnimatePresence>
+                        {isFetchingSuggestions && (
+                          <div className="flex items-center ml-2">
+                            <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/50" />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -291,30 +374,32 @@ export default function App() {
                   <Separator className="mb-8" />
 
                   {/* Controls */}
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                  <div className="space-y-6 mb-10">
+                    <div className="flex justify-end">
+                      <div className="flex items-center gap-2">
+                        <ActionButton 
+                          icon={<MessageSquare className="w-4 h-4" />} 
+                          label="Proposal" 
+                          onClick={() => {
+                            const lead = filteredLeads[0];
+                            if (lead) generateProposal(lead);
+                          }}
+                        />
+                        <ActionButton icon={<Columns className="w-4 h-4" />} label="Columns" />
+                        <ActionButton icon={<Download className="w-4 h-4" />} label="Export" onClick={handleExport} />
+                      </div>
+                    </div>
+
                     <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
                       {CATEGORIES.map(cat => (
                         <button 
                           key={cat}
                           onClick={() => setActiveCategory(cat)}
-                          className={`px-5 py-2 text-sm font-medium rounded-md border transition-all whitespace-nowrap ${activeCategory === cat ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-accent'}`}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-all whitespace-nowrap ${activeCategory === cat ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-accent'}`}
                         >
                           {cat}
                         </button>
                       ))}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <ActionButton 
-                        icon={<MessageSquare className="w-4 h-4" />} 
-                        label="Proposal" 
-                        onClick={() => {
-                          const lead = filteredLeads[0];
-                          if (lead) generateProposal(lead);
-                        }}
-                      />
-                      <ActionButton icon={<Columns className="w-4 h-4" />} label="Columns" />
-                      <ActionButton icon={<Download className="w-4 h-4" />} label="Export" suffix={<ChevronDown className="w-3 h-3" />} />
                     </div>
                   </div>
 
