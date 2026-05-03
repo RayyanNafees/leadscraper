@@ -28,15 +28,28 @@ import {
   Share2,
   Terminal,
   Database,
-  Users
+  Users,
+  Copy,
+  Check,
+  Loader2,
+  SendHorizontal,
+  X
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import {
   Sidebar,
   SidebarContent,
@@ -122,11 +135,65 @@ const LEADS: Lead[] = [
 const CATEGORIES = ['All', 'Education', 'Money', 'Business', 'Automation'];
 const SUGGESTIONS = ['zapier', 'make.com', 'n8n', 'activepieces', 'paperclip', 'konnectify'];
 
+let genAI: GoogleGenerativeAI | null = null;
+function getGenAI() {
+  if (!genAI) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY is not defined");
+    genAI = new GoogleGenerativeAI(apiKey);
+  }
+  return genAI;
+}
+
 export default function App() {
   const [isDark, setIsDark] = React.useState(false);
   const [activeCategory, setActiveCategory] = React.useState('All');
   const [platform, setPlatform] = React.useState<Platform>('YouTube');
   const [search, setSearch] = React.useState('n8n');
+  
+  // Proposal Modal State
+  const [isProposalOpen, setIsProposalOpen] = React.useState(false);
+  const [selectedLead, setSelectedLead] = React.useState<Lead | null>(null);
+  const [proposalText, setProposalText] = React.useState('');
+  const [isGenerating, setIsGenerating] = React.useState(false);
+  const [refineInput, setRefineInput] = React.useState('');
+  const [copied, setCopied] = React.useState(false);
+
+  const generateProposal = async (lead: Lead, refinement?: string) => {
+    setIsGenerating(true);
+    if (!proposalText) setIsProposalOpen(true);
+    setSelectedLead(lead);
+
+    try {
+      const model = getGenAI().getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+      const prompt = refinement 
+        ? `Given this existing proposal: "${proposalText}", refine it with this instruction: "${refinement}". 
+           Keep the context of the lead: Title: ${lead.title}, Channel: ${lead.channelName}, Subscribers: ${lead.subscribers}.`
+        : `Generate a professional and engaging outreach proposal for a potential lead. 
+           Lead Details:
+           - Video Title: ${lead.title}
+           - Channel Name: ${lead.channelName}
+           - Subscribers: ${lead.subscribers}
+           - Topic: ${lead.category}
+           
+           The proposal should be concise, mention a specific detail from their title, and offer automation services to help scale their business. 
+           Use a friendly but professional tone. Do not include subject lines, just the body.`;
+
+      const result = await model.generateContent(prompt);
+      setProposalText(result.response.text());
+    } catch (error) {
+      console.error("Failed to generate proposal:", error);
+      setProposalText("Error generating proposal. Please check your API key.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(proposalText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   React.useEffect(() => {
     if (isDark) {
@@ -238,7 +305,14 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <ActionButton icon={<MessageSquare className="w-4 h-4" />} label="Proposal" />
+                      <ActionButton 
+                        icon={<MessageSquare className="w-4 h-4" />} 
+                        label="Proposal" 
+                        onClick={() => {
+                          const lead = filteredLeads[0];
+                          if (lead) generateProposal(lead);
+                        }}
+                      />
                       <ActionButton icon={<Columns className="w-4 h-4" />} label="Columns" />
                       <ActionButton icon={<Download className="w-4 h-4" />} label="Export" suffix={<ChevronDown className="w-3 h-3" />} />
                     </div>
@@ -246,11 +320,97 @@ export default function App() {
 
                   {/* Content Sections */}
                   <div className="space-y-12">
-                    <LeadSection title="This Week" leads={filteredLeads.filter(l => l.dateGroup === 'This Week')} />
-                    <LeadSection title="This Month" leads={filteredLeads.filter(l => l.dateGroup === 'This Month')} />
+                    <LeadSection 
+                      title="This Week" 
+                      leads={filteredLeads.filter(l => l.dateGroup === 'This Week')} 
+                      onProposal={(l) => generateProposal(l)}
+                    />
+                    <LeadSection 
+                      title="This Month" 
+                      leads={filteredLeads.filter(l => l.dateGroup === 'This Month')} 
+                      onProposal={(l) => generateProposal(l)}
+                    />
                   </div>
                 </div>
               </main>
+
+              {/* Proposal Dialog */}
+              <Dialog open={isProposalOpen} onOpenChange={setIsProposalOpen}>
+                <DialogContent className="max-w-2xl bg-background border-border p-0 overflow-hidden rounded-2xl shadow-2xl">
+                  <DialogHeader className="p-6 pb-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <DialogTitle className="text-xl font-semibold">AI Proposal Generator</DialogTitle>
+                        <DialogDescription className="text-sm text-muted-foreground mt-1">
+                          Crafting a custom message for <span className="font-medium text-foreground">{selectedLead?.channelName}</span>
+                        </DialogDescription>
+                      </div>
+                    </div>
+                  </DialogHeader>
+
+                  <div className="px-6 py-4">
+                    <div className="relative group">
+                      <div className="absolute top-3 right-3 flex items-center gap-2">
+                        <button 
+                          onClick={handleCopy}
+                          className="p-2 bg-background/80 backdrop-blur border border-border rounded-lg hover:bg-accent transition-colors shadow-sm"
+                          title="Copy to clipboard"
+                        >
+                          {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <div className={`min-h-[240px] p-6 rounded-xl border border-border bg-muted/30 font-sans leading-relaxed text-foreground whitespace-pre-wrap overflow-y-auto max-h-[400px] ${isGenerating ? 'animate-pulse' : ''}`}>
+                        {isGenerating ? (
+                          <div className="flex flex-col gap-3">
+                            <div className="h-4 bg-muted-foreground/10 rounded w-3/4" />
+                            <div className="h-4 bg-muted-foreground/10 rounded w-full" />
+                            <div className="h-4 bg-muted-foreground/10 rounded w-5/6" />
+                            <div className="h-4 bg-muted-foreground/10 rounded w-2/3" />
+                          </div>
+                        ) : (
+                          proposalText || "No proposal generated yet."
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-6 pt-2 bg-muted/10 border-t border-border">
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (selectedLead && refineInput.trim()) {
+                          generateProposal(selectedLead, refineInput);
+                          setRefineInput('');
+                        }
+                      }}
+                      className="flex items-center gap-3 bg-background border border-border rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-primary/20 transition-all shadow-sm"
+                    >
+                      <input 
+                        type="text"
+                        value={refineInput}
+                        onChange={(e) => setRefineInput(e.target.value)}
+                        placeholder="Refine the proposal... (e.g. 'Make it more casual')"
+                        className="flex-1 bg-transparent border-none outline-none px-3 text-sm"
+                        disabled={isGenerating}
+                      />
+                      <button 
+                        type="submit"
+                        disabled={isGenerating || !refineInput.trim()}
+                        className="bg-primary text-primary-foreground p-2 rounded-lg hover:opacity-90 disabled:opacity-50 transition-all flex items-center gap-2 px-4 h-9"
+                      >
+                        {isGenerating ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>
+                            <span className="text-xs font-semibold">Refine</span>
+                            <SendHorizontal className="w-4 h-4" />
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
           </SidebarInset>
         </div>
@@ -360,9 +520,12 @@ function AppSidebar({ isDark, setIsDark }: { isDark: boolean, setIsDark: (v: boo
   );
 }
 
-function ActionButton({ icon, label, suffix }: { icon: React.ReactNode, label: string, suffix?: React.ReactNode }) {
+function ActionButton({ icon, label, suffix, onClick }: { icon: React.ReactNode, label: string, suffix?: React.ReactNode, onClick?: () => void }) {
   return (
-    <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border rounded-md bg-background text-muted-foreground hover:bg-accent transition-all shadow-sm">
+    <button 
+      onClick={onClick}
+      className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border rounded-md bg-background text-muted-foreground hover:bg-accent transition-all shadow-sm"
+    >
       <span className="text-muted-foreground">{icon}</span>
       {label}
       {suffix && <span className="text-muted-foreground">{suffix}</span>}
@@ -370,7 +533,7 @@ function ActionButton({ icon, label, suffix }: { icon: React.ReactNode, label: s
   );
 }
 
-function LeadSection({ title, leads }: { title: string, leads: Lead[] }) {
+function LeadSection({ title, leads, onProposal }: { title: string, leads: Lead[], onProposal: (l: Lead) => void }) {
   if (leads.length === 0) return null;
   return (
     <section>
@@ -424,11 +587,15 @@ function LeadSection({ title, leads }: { title: string, leads: Lead[] }) {
               </div>
 
               <div className="flex gap-3 mt-1">
-                <button className="flex-1 bg-primary text-primary-foreground py-2.5 rounded-md font-semibold text-sm shadow-sm hover:opacity-90 active:scale-[0.98] transition-all">
-                  Qualify
+                <button 
+                  onClick={() => onProposal(lead)}
+                  className="flex-1 bg-primary text-primary-foreground py-2.5 rounded-md font-semibold text-sm shadow-sm hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Proposal
                 </button>
                 <button className="flex-1 bg-background border border-border text-foreground py-2.5 rounded-md font-semibold text-sm hover:bg-muted transition-all">
-                  Ignore
+                  Qualify
                 </button>
               </div>
             </div>
@@ -438,7 +605,9 @@ function LeadSection({ title, leads }: { title: string, leads: Lead[] }) {
               {/* Avatar & Count */}
               <div className="p-4 flex items-center justify-center lg:w-24 border-r border-border bg-muted/30">
                 <div className="flex flex-col items-center gap-1.5">
-                  <img src={lead.avatar} alt="Avatar" className="w-10 h-10 rounded-full border border-border grayscale group-hover:grayscale-0 transition-all duration-300" />
+                  <div className="relative group/avatar">
+                    <img src={lead.avatar} alt="Avatar" className="w-10 h-10 rounded-full border border-border grayscale group-hover/avatar:grayscale-0 transition-all duration-300" />
+                  </div>
                   <span className="text-[10px] font-mono font-medium text-muted-foreground">{lead.count}</span>
                 </div>
               </div>
@@ -470,7 +639,13 @@ function LeadSection({ title, leads }: { title: string, leads: Lead[] }) {
               </div>
 
               {/* Actions */}
-              <div className="flex items-stretch lg:w-72">
+              <div className="flex items-stretch lg:w-[320px]">
+                <button 
+                  onClick={() => onProposal(lead)}
+                  className="flex-1 flex items-center justify-center gap-2 hover:bg-primary/10 text-primary font-medium text-sm transition-all border-r border-border"
+                >
+                  <MessageSquare className="w-4 h-4" /> Proposal
+                </button>
                 <button className="flex-1 flex items-center justify-center gap-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 text-emerald-600 font-medium text-sm transition-all border-r border-border">
                   <CheckCircle2 className="w-4 h-4" /> Qualify
                 </button>
