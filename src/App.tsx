@@ -174,8 +174,8 @@ export default function App() {
         : `Suggest 6 of the most currently trending software tools, AI platforms, or automation frameworks (e.g. Cursor, Replit, n8n, LangChain). Return ONLY a comma-separated list of names.`;
 
       const result = await ai.models.generateContent({
-        model: "gemini-flash-latest",
-        contents: prompt
+        model: "models/gemini-1.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }]
       });
       const text = result.text;
       const keywords = (text || '').split(',').map(k => k.trim()).filter(k => k.length > 0).slice(0, 6);
@@ -217,8 +217,8 @@ export default function App() {
            Use a friendly but professional tone. Do not include subject lines, just the body.`;
 
       const result = await ai.models.generateContent({
-        model: "gemini-flash-latest",
-        contents: prompt
+        model: "models/gemini-1.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }]
       });
       setProposalText(result.text || "No text generated.");
     } catch (error) {
