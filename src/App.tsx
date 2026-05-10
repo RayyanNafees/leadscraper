@@ -22,7 +22,7 @@ import {
   Ban,
   Moon,
   Sun,
-  Menu,
+  // Menu,
   BadgeCheck,
   Clock,
   Share2,
@@ -33,7 +33,6 @@ import {
   Check,
   Loader2,
   SendHorizontal,
-  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
@@ -106,7 +105,7 @@ const LEADS: Lead[] = [
   },
   {
     id: '2',
-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDvYXIFFI9MBio1jaWSymV68QTkbGQQQ6CuhDIPHRTmPwr2HET362N5TkoQdt5BaRWbH7XagRQriAfeGzfj9F_2KlUzVxeg9Shl4repak2dwvcso5TRgETCkWCw3cfuunompWEKpDLkbFvJ78tvdHf0W6sMJ93DfQhWUXlE0Zx9sCU-HslpLIf7_GVezJ1K4AjcaVtiRXvhGPhrkQd_V2lFZCTkUdKkUhDv2mnK9zHRVL6eqtsqx_DeTWoCVwOFLdaAFsQXps0aL5Mx',
+    avatar: '/img/girl.png',
     count: '102k',
     title: 'Start Earning with n8n automation agency services today with these simple steps',
     views: '12k',
@@ -119,7 +118,7 @@ const LEADS: Lead[] = [
   },
   {
     id: '3',
-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDmhurY8Z3uYiJ484Etot7a4iILcHYcb4eu-CkLV3cDGFEv8VlS8-o6dEcJkHZfzqZQ5vRLv00R_IjQpl8M-83vSupPB97cEQiqbSuBUSHqCs2RltgDXyoaEm0gYZ7Pcxjy3GEjaerQpWNZ4Hut2E7e2nP7tHkdpimivkntSIuVupsmSAs1_9GWgw4o82wcePVO9QWDSSfXSxhBF5rREqoCYAjNlklMNCff256lo38S-HtqFqLMtRI8frTvwfXqrl3IJzpmnMcdb_xx',
+    avatar: '/img/alien.png',
     count: '102k',
     title: 'Learn n8n and start earning $100k per year with these advanced automation strategies',
     views: '12k',
@@ -336,7 +335,7 @@ export default function App() {
                           value={inputValue}
                           onChange={(e) => setInputValue(e.target.value)}
                           placeholder="Search keywords (e.g. n8n experts)" 
-                          className="flex-grow px-5 py-3 outline-none text-sm bg-transparent text-foreground"
+                          className="grow px-5 py-3 outline-none text-sm bg-transparent text-foreground"
                         />
                         <button className="bg-primary text-primary-foreground px-7 flex items-center justify-center transition-all hover:opacity-80">
                           <Search className="w-4 h-4" />
